@@ -133,8 +133,9 @@ session.use_only_cookies = On
 | `session.upload_progress.enabled = Off` | A, C (partial) |
 | `session.use_only_cookies = On` | A, C (session fixation) |
 | Update to PHP 8.2.35+ | **All chains** |
+| Community EOL backports (5.6–8.1) | **All chains** (via source patches) |
 
-> **The only complete fix is patching PHP.** The OOM corruption (Chain D) is in the Zend engine core, not in session handling.
+> **The only complete fix is patching PHP.** The OOM corruption (Chain D) is in the Zend engine core, not in session handling. For legacy EOL branches (5.6, 7.4, 8.0, 8.1), source backports are available at [Anton-Barinov/php2shell-patches](https://github.com/Anton-Barinov/php2shell-patches).
 
 ## Timeline
 
@@ -152,6 +153,7 @@ session.use_only_cookies = On
 - [GHSA-6wmf-4rv5-p3rp](https://github.com/php/php-src/security/advisories/GHSA-6wmf-4rv5-p3rp) — CVE-2026-109619
 - [Patch commit](https://github.com/php/php-src/commit/3584a98bda) — 300 files, Zend engine + extensions
 - [PR #22113](https://github.com/php/php-src/pull/22113) — Session fixation fix
+- [Community EOL Patches (5.6, 7.4, 8.0, 8.1)](https://github.com/Anton-Barinov/php2shell-patches) — Backported fixes for unmaintained PHP releases
 - [BleepingComputer coverage](https://www.bleepingcomputer.com/news/security/php-ships-emergency-patches-for-critical-php2shell-flaws/)
 
 ## Disclaimer
