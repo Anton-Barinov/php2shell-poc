@@ -58,7 +58,7 @@ Conditions: two directories with different session.serialize_handler
 Key finding: __destruct fires on BOTH success and failure paths
 ```
 
-### Chain D — OOM Corruption → Stale State → RCE ⚡
+### Chain D — mod_php OOM → Stale EG() → RCE ⚡
 
 Multipart POST triggers OOM during request startup → `longjmp()` skips `init_executor` → Apache mod_php runs shutdown on stale `EG()` globals → use-after-free → RCE.
 
@@ -68,6 +68,16 @@ SAPI: Apache mod_php ✅ | FPM ⚠️ (child exits) | FrankenPHP ✅
 ```
 
 **This is a pre-auth, zero-dependency RCE against default Apache mod_php installations.**
+
+### Chain E — FPM Session OOM → Stale BG(unserialize) → RCE ⚡
+
+Producer request: `session_start()` decodes ~30MB session → OOM during `php_var_unserialize` → `BG(unserialize).level` stays >0, session destruction state dirty → FPM worker **survives**. Consumer request: `upload_progress` triggers `rfc1867` handler (runs **before** `PHP_RINIT_FUNCTION(basic)`) → accesses stale `BG(unserialize)` → "Session object destruction failed" → `__destruct` on stale objects → UAF → RCE.
+
+```
+Conditions: session_start() endpoint + large session file + FPM
+Key finding: rfc1867 runs BEFORE basic_rinit — stale BG(unserialize) is accessible
+Verified: "Session object destruction failed" during PHP Request Startup
+```
 
 ## Official CVE Details
 
@@ -98,6 +108,9 @@ python3 ../poc/verify_handler_mismatch.py --target http://127.0.0.1:18080
 
 # Verify Chain D: OOM on Apache mod_php
 python3 ../poc/verify_oom_trigger.py --host 127.0.0.1 --port 18081 --strategy headers
+
+# Verify Chain E: FPM stale BG state
+python3 ../poc/verify_fpm_stale_state.py --target http://127.0.0.1:18080
 ```
 
 ## Repository Structure
@@ -109,7 +122,8 @@ php2shell-poc/
 │   ├── verify_session_injection.py    # Chain A: session file injection
 │   ├── verify_uaf_asan.php            # Chain B: var_destroy UAF (ASAN)
 │   ├── verify_handler_mismatch.py     # Chain C: handler mismatch
-│   └── verify_oom_trigger.py          # Chain D: OOM trigger strategies
+│   ├── verify_oom_trigger.py          # Chain D: OOM trigger strategies
+│   └── verify_fpm_stale_state.py      # Chain E: FPM stale BG verification
 ├── lab/
 │   ├── docker-compose.yml             # FPM + nginx + Apache mod_php
 │   ├── setup.sh                       # One-click lab setup
@@ -130,8 +144,9 @@ session.use_only_cookies = On
 
 | Mitigation | Chains blocked |
 |-----------|---------------|
-| `session.upload_progress.enabled = Off` | A, C (partial) |
+| `session.upload_progress.enabled = Off` | A, C, E (partial) |
 | `session.use_only_cookies = On` | A, C (session fixation) |
+| `memory_limit` + `post_max_size` tuning | D (reduces OOM surface) |
 | Update to PHP 8.2.35+ | **All chains** |
 
 > **The only complete fix is patching PHP.** The OOM corruption (Chain D) is in the Zend engine core, not in session handling.
