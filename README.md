@@ -118,6 +118,11 @@ python3 ../poc/verify_fpm_stale_state.py --target http://127.0.0.1:18080
 ```
 php2shell-poc/
 ├── README.md
+├── detection/
+│   ├── php2shell.rules                # Suricata / Snort IDS rules (13 signatures)
+│   ├── php2shell.yaml                 # Sigma SIEM detection rules
+│   ├── modsecurity.conf               # ModSecurity WAF rules
+│   └── php2shell.lua                  # OpenResty / Nginx Lua WAF module
 ├── poc/
 │   ├── verify_session_injection.py    # Chain A: session file injection
 │   ├── verify_uaf_asan.php            # Chain B: var_destroy UAF (ASAN)
@@ -150,6 +155,17 @@ session.use_only_cookies = On
 | Update to PHP 8.2.35+ | **All chains** |
 
 > **The only complete fix is patching PHP.** The OOM corruption (Chain D) is in the Zend engine core, not in session handling.
+
+## Detection Rules
+
+Pre-built detection rules for IDS, WAF, and SIEM platforms are in [`detection/`](detection/):
+
+- **Suricata / Snort** — 13 network IDS signatures (request + response + recon)
+- **Sigma** — 5 log-based rules for SIEM (web server, process creation, file events)
+- **ModSecurity** — 7 WAF rules for Apache/Nginx
+- **OpenResty Lua** — lightweight reverse proxy module
+
+The single most effective detection: block `PHP_SESSION_UPLOAD_PROGRESS` in multipart POST bodies. This string has near-zero legitimate use and is the primary trigger for both CVEs.
 
 ## Timeline
 
