@@ -148,75 +148,118 @@ INI
 # ── Nginx config (multi-backend) ───────────────────────
 
 cat > nginx.conf << 'NGINX'
-# PHP 8.2.34 (vulnerable)
+# Shared fastcgi block
+# Each server{} routes to a different PHP-FPM version by port
+
+# PHP 5.6.40 (EOL)
+server {
+    listen 56;
+    root /var/www/html; index index.php; client_max_body_size 128m;
+    location / { try_files $uri $uri/ /index.php?$query_string; }
+    location ~ \.php$ {
+        fastcgi_pass php56-fpm:9000;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+        fastcgi_read_timeout 120; fastcgi_request_buffering off;
+    }
+}
+
+# PHP 7.4.33 (EOL)
+server {
+    listen 74;
+    root /var/www/html; index index.php; client_max_body_size 128m;
+    location / { try_files $uri $uri/ /index.php?$query_string; }
+    location ~ \.php$ {
+        fastcgi_pass php74-fpm:9000;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+        fastcgi_read_timeout 120; fastcgi_request_buffering off;
+    }
+}
+
+# PHP 8.0.30 (EOL)
 server {
     listen 80;
-    root /var/www/html;
-    index index.php;
-    client_max_body_size 128m;
+    root /var/www/html; index index.php; client_max_body_size 128m;
+    location / { try_files $uri $uri/ /index.php?$query_string; }
+    location ~ \.php$ {
+        fastcgi_pass php80-fpm:9000;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+        fastcgi_read_timeout 120; fastcgi_request_buffering off;
+    }
+}
 
+# PHP 8.1.31 (EOL)
+server {
+    listen 81;
+    root /var/www/html; index index.php; client_max_body_size 128m;
+    location / { try_files $uri $uri/ /index.php?$query_string; }
+    location ~ \.php$ {
+        fastcgi_pass php81-fpm:9000;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+        fastcgi_read_timeout 120; fastcgi_request_buffering off;
+    }
+}
+
+# PHP 8.2.34 (vulnerable)
+server {
+    listen 82;
+    root /var/www/html; index index.php; client_max_body_size 128m;
     location / { try_files $uri $uri/ /index.php?$query_string; }
     location ~ \.php$ {
         fastcgi_pass php82-fpm:9000;
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
-        fastcgi_read_timeout 120;
-        fastcgi_request_buffering off;
+        fastcgi_read_timeout 120; fastcgi_request_buffering off;
     }
 }
 
 # PHP 8.3.35 (vulnerable)
 server {
-    listen 82;
-    root /var/www/html;
-    index index.php;
-    client_max_body_size 128m;
-
+    listen 83;
+    root /var/www/html; index index.php; client_max_body_size 128m;
     location / { try_files $uri $uri/ /index.php?$query_string; }
     location ~ \.php$ {
         fastcgi_pass php83-fpm:9000;
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
-        fastcgi_read_timeout 120;
-        fastcgi_request_buffering off;
+        fastcgi_read_timeout 120; fastcgi_request_buffering off;
     }
 }
 
 # PHP 8.4.26 (vulnerable)
 server {
-    listen 83;
-    root /var/www/html;
-    index index.php;
-    client_max_body_size 128m;
-
+    listen 84;
+    root /var/www/html; index index.php; client_max_body_size 128m;
     location / { try_files $uri $uri/ /index.php?$query_string; }
     location ~ \.php$ {
         fastcgi_pass php84-fpm:9000;
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
-        fastcgi_read_timeout 120;
-        fastcgi_request_buffering off;
+        fastcgi_read_timeout 120; fastcgi_request_buffering off;
     }
 }
 
-# PHP 8.2.35 (PATCHED — differential testing)
+# PHP 8.2.35 (PATCHED)
 server {
-    listen 84;
-    root /var/www/html;
-    index index.php;
-    client_max_body_size 128m;
-
+    listen 85;
+    root /var/www/html; index index.php; client_max_body_size 128m;
     location / { try_files $uri $uri/ /index.php?$query_string; }
     location ~ \.php$ {
         fastcgi_pass php82p-fpm:9000;
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
-        fastcgi_read_timeout 120;
-        fastcgi_request_buffering off;
+        fastcgi_read_timeout 120; fastcgi_request_buffering off;
     }
 }
 NGINX
@@ -236,7 +279,56 @@ FPM
 
 cat > docker-compose.yml << 'YAML'
 services:
-  # ── PHP 8.2.34 (vulnerable) ── FPM — Chains A, B, C, E
+  # ── EOL versions (no official fix) ─────────────────────
+  php56-fpm:
+    image: php:5.6.40-fpm
+    container_name: php2shell-fpm-56
+    volumes:
+      - ./webroot:/var/www/html
+      - ./php.ini:/usr/local/etc/php/php.ini
+      - ./www.conf:/usr/local/etc/php-fpm.d/www.conf
+    security_opt: [seccomp:unconfined]
+    privileged: true
+    command: >
+      bash -c "mkdir -p /tmp/sessions && chmod 1777 /tmp/sessions && php-fpm"
+
+  php74-fpm:
+    image: php:7.4.33-fpm
+    container_name: php2shell-fpm-74
+    volumes:
+      - ./webroot:/var/www/html
+      - ./php.ini:/usr/local/etc/php/php.ini
+      - ./www.conf:/usr/local/etc/php-fpm.d/www.conf
+    security_opt: [seccomp:unconfined]
+    privileged: true
+    command: >
+      bash -c "mkdir -p /tmp/sessions && chmod 1777 /tmp/sessions && php-fpm"
+
+  php80-fpm:
+    image: php:8.0.30-fpm
+    container_name: php2shell-fpm-80
+    volumes:
+      - ./webroot:/var/www/html
+      - ./php.ini:/usr/local/etc/php/php.ini
+      - ./www.conf:/usr/local/etc/php-fpm.d/www.conf
+    security_opt: [seccomp:unconfined]
+    privileged: true
+    command: >
+      bash -c "mkdir -p /tmp/sessions && chmod 1777 /tmp/sessions && php-fpm"
+
+  php81-fpm:
+    image: php:8.1.31-fpm
+    container_name: php2shell-fpm-81
+    volumes:
+      - ./webroot:/var/www/html
+      - ./php.ini:/usr/local/etc/php/php.ini
+      - ./www.conf:/usr/local/etc/php-fpm.d/www.conf
+    security_opt: [seccomp:unconfined]
+    privileged: true
+    command: >
+      bash -c "mkdir -p /tmp/sessions && chmod 1777 /tmp/sessions && php-fpm"
+
+  # ── Supported versions (last vulnerable before patch) ──
   php82-fpm:
     image: php:8.2.34-fpm
     container_name: php2shell-fpm-82
@@ -249,7 +341,6 @@ services:
     command: >
       bash -c "mkdir -p /tmp/sessions && chmod 1777 /tmp/sessions && php-fpm"
 
-  # ── PHP 8.3.35 (vulnerable) ── FPM
   php83-fpm:
     image: php:8.3.35-fpm
     container_name: php2shell-fpm-83
@@ -262,7 +353,6 @@ services:
     command: >
       bash -c "mkdir -p /tmp/sessions && chmod 1777 /tmp/sessions && php-fpm"
 
-  # ── PHP 8.4.26 (vulnerable) ── FPM
   php84-fpm:
     image: php:8.4.26-fpm
     container_name: php2shell-fpm-84
@@ -275,7 +365,7 @@ services:
     command: >
       bash -c "mkdir -p /tmp/sessions && chmod 1777 /tmp/sessions && php-fpm"
 
-  # ── PHP 8.2.35 (PATCHED) ── FPM — differential testing
+  # ── Patched (differential testing) ─────────────────────
   php82p-fpm:
     image: php:8.2.35-fpm
     container_name: php2shell-fpm-82p
@@ -288,25 +378,57 @@ services:
     command: >
       bash -c "mkdir -p /tmp/sessions && chmod 1777 /tmp/sessions && php-fpm"
 
-  # ── Nginx — routes to all FPM backends by port
+  # ── Nginx ──────────────────────────────────────────────
   nginx:
     image: nginx:alpine
     container_name: php2shell-nginx
     ports:
-      - "18080:80"    # → PHP 8.2.34 (vulnerable)
-      - "18082:82"    # → PHP 8.3.35 (vulnerable)
-      - "18083:83"    # → PHP 8.4.26 (vulnerable)
-      - "18084:84"    # → PHP 8.2.35 (patched)
+      - "18056:56"    # → PHP 5.6.40 (EOL)
+      - "18074:74"    # → PHP 7.4.33 (EOL)
+      - "18080:80"    # → PHP 8.0.30 (EOL)
+      - "18081:81"    # → PHP 8.1.31 (EOL)
+      - "18082:82"    # → PHP 8.2.34 (vulnerable)
+      - "18083:83"    # → PHP 8.3.35 (vulnerable)
+      - "18084:84"    # → PHP 8.4.26 (vulnerable)
+      - "18085:85"    # → PHP 8.2.35 (patched)
     volumes:
       - ./webroot:/var/www/html
       - ./nginx.conf:/etc/nginx/conf.d/default.conf
-    depends_on: [php82-fpm, php83-fpm, php84-fpm, php82p-fpm]
+    depends_on:
+      - php56-fpm
+      - php74-fpm
+      - php80-fpm
+      - php81-fpm
+      - php82-fpm
+      - php83-fpm
+      - php84-fpm
+      - php82p-fpm
 
-  # ── Apache mod_php 8.2.34 (vulnerable) ── Chain D (OOM)
+  # ── Apache mod_php ─────────────────────────────────────
   apache:
     image: php:8.2.34-apache
     container_name: php2shell-apache
-    ports: ["18081:80"]
+    ports: ["18091:80"]
+    volumes:
+      - ./webroot:/var/www/html
+      - ./php-apache.ini:/usr/local/etc/php/php.ini
+    command: >
+      bash -c "mkdir -p /tmp/sessions && chmod 1777 /tmp/sessions && apache2-foreground"
+
+  apache56:
+    image: php:5.6.40-apache
+    container_name: php2shell-apache-56
+    ports: ["18092:80"]
+    volumes:
+      - ./webroot:/var/www/html
+      - ./php-apache.ini:/usr/local/etc/php/php.ini
+    command: >
+      bash -c "mkdir -p /tmp/sessions && chmod 1777 /tmp/sessions && apache2-foreground"
+
+  apache74:
+    image: php:7.4.33-apache
+    container_name: php2shell-apache-74
+    ports: ["18093:80"]
     volumes:
       - ./webroot:/var/www/html
       - ./php-apache.ini:/usr/local/etc/php/php.ini
@@ -321,39 +443,43 @@ docker compose up -d
 
 # Wait for services
 echo "Waiting for services..."
-sleep 5
+sleep 8
 
 # Verify
 echo ""
 echo "Verifying..."
-PHP82=$(curl -sf http://127.0.0.1:18080/index.php 2>/dev/null | head -1)
-APACHE=$(curl -sf http://127.0.0.1:18081/index.php 2>/dev/null | head -1)
-PHP83=$(curl -sf http://127.0.0.1:18082/index.php 2>/dev/null | head -1)
-PHP84=$(curl -sf http://127.0.0.1:18083/index.php 2>/dev/null | head -1)
-PHP82P=$(curl -sf http://127.0.0.1:18084/index.php 2>/dev/null | head -1)
-echo "  8.2.34 FPM    : ${PHP82:-FAILED}  (http://127.0.0.1:18080)"
-echo "  8.2.34 Apache : ${APACHE:-FAILED}  (http://127.0.0.1:18081)"
-echo "  8.3.35 FPM    : ${PHP83:-FAILED}  (http://127.0.0.1:18082)"
-echo "  8.4.26 FPM    : ${PHP84:-FAILED}  (http://127.0.0.1:18083)"
-echo "  8.2.35 FPM    : ${PHP82P:-FAILED}  (http://127.0.0.1:18084) [PATCHED]"
+check() { curl -sf "http://127.0.0.1:$1/index.php" 2>/dev/null | head -1; }
+printf "  %-14s : %s  (%s)\n" "5.6.40 FPM"    "$(check 18056)" "http://127.0.0.1:18056"
+printf "  %-14s : %s  (%s)\n" "7.4.33 FPM"    "$(check 18074)" "http://127.0.0.1:18074"
+printf "  %-14s : %s  (%s)\n" "8.0.30 FPM"    "$(check 18080)" "http://127.0.0.1:18080"
+printf "  %-14s : %s  (%s)\n" "8.1.31 FPM"    "$(check 18081)" "http://127.0.0.1:18081"
+printf "  %-14s : %s  (%s)\n" "8.2.34 FPM"    "$(check 18082)" "http://127.0.0.1:18082"
+printf "  %-14s : %s  (%s)\n" "8.3.35 FPM"    "$(check 18083)" "http://127.0.0.1:18083"
+printf "  %-14s : %s  (%s)\n" "8.4.26 FPM"    "$(check 18084)" "http://127.0.0.1:18084"
+printf "  %-14s : %s  (%s) %s\n" "8.2.35 FPM" "$(check 18085)" "http://127.0.0.1:18085" "[PATCHED]"
+printf "  %-14s : %s  (%s)\n" "8.2.34 Apache" "$(check 18091)" "http://127.0.0.1:18091"
+printf "  %-14s : %s  (%s)\n" "5.6.40 Apache" "$(check 18092)" "http://127.0.0.1:18092"
+printf "  %-14s : %s  (%s)\n" "7.4.33 Apache" "$(check 18093)" "http://127.0.0.1:18093"
 
 echo ""
-echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║  php2shell Lab ready!                                       ║"
-echo "╠══════════════════════════════════════════════════════════════╣"
-echo "║                                                             ║"
-echo "║  Vulnerable:                                                ║"
-echo "║    PHP 8.2.34 FPM     → http://127.0.0.1:18080             ║"
-echo "║    PHP 8.2.34 Apache  → http://127.0.0.1:18081             ║"
-echo "║    PHP 8.3.35 FPM     → http://127.0.0.1:18082             ║"
-echo "║    PHP 8.4.26 FPM     → http://127.0.0.1:18083             ║"
-echo "║                                                             ║"
-echo "║  Patched (differential testing):                            ║"
-echo "║    PHP 8.2.35 FPM     → http://127.0.0.1:18084             ║"
-echo "║                                                             ║"
-echo "║  Exploit:                                                   ║"
-echo "║    cd ../exploit                                            ║"
-echo "║    python3 chain_a_session_lfi.py --target http://...:PORT  ║"
-echo "║    python3 chain_c_mismatch_rce.py --target http://...:PORT ║"
-echo "║                                                             ║"
-echo "╚══════════════════════════════════════════════════════════════╝"
+echo "╔══════════════════════════════════════════════════════════════════╗"
+echo "║  php2shell Lab ready!                                           ║"
+echo "╠══════════════════════════════════════════════════════════════════╣"
+echo "║                                                                 ║"
+echo "║  FPM + nginx:                                                   ║"
+echo "║    PHP 5.6.40  → :18056   PHP 8.2.34  → :18082                 ║"
+echo "║    PHP 7.4.33  → :18074   PHP 8.3.35  → :18083                 ║"
+echo "║    PHP 8.0.30  → :18080   PHP 8.4.26  → :18084                 ║"
+echo "║    PHP 8.1.31  → :18081   PHP 8.2.35  → :18085 [PATCHED]       ║"
+echo "║                                                                 ║"
+echo "║  Apache mod_php (Chain D — OOM):                                ║"
+echo "║    PHP 5.6.40  → :18092                                        ║"
+echo "║    PHP 7.4.33  → :18093                                        ║"
+echo "║    PHP 8.2.34  → :18091                                        ║"
+echo "║                                                                 ║"
+echo "║  Exploit:                                                       ║"
+echo "║    cd ../exploit                                                ║"
+echo "║    python3 chain_a_session_lfi.py --target http://...:PORT      ║"
+echo "║    python3 chain_c_mismatch_rce.py --target http://...:PORT     ║"
+echo "║                                                                 ║"
+echo "╚══════════════════════════════════════════════════════════════════╝"

@@ -1,4 +1,64 @@
 services:
+  # ════════════════════════════════════════════════════════
+  # EOL versions (no official fix available)
+  # ════════════════════════════════════════════════════════
+
+  # ── PHP 5.6.40 (EOL, vulnerable since 5.4.0) ── FPM
+  php56-fpm:
+    image: php:5.6.40-fpm
+    container_name: php2shell-fpm-56
+    volumes:
+      - ./webroot:/var/www/html
+      - ./php.ini:/usr/local/etc/php/php.ini
+      - ./www.conf:/usr/local/etc/php-fpm.d/www.conf
+    security_opt: [seccomp:unconfined]
+    privileged: true
+    command: >
+      bash -c "mkdir -p /tmp/sessions && chmod 1777 /tmp/sessions && php-fpm"
+
+  # ── PHP 7.4.33 (EOL, last 7.x) ── FPM
+  php74-fpm:
+    image: php:7.4.33-fpm
+    container_name: php2shell-fpm-74
+    volumes:
+      - ./webroot:/var/www/html
+      - ./php.ini:/usr/local/etc/php/php.ini
+      - ./www.conf:/usr/local/etc/php-fpm.d/www.conf
+    security_opt: [seccomp:unconfined]
+    privileged: true
+    command: >
+      bash -c "mkdir -p /tmp/sessions && chmod 1777 /tmp/sessions && php-fpm"
+
+  # ── PHP 8.0.30 (EOL, last 8.0) ── FPM
+  php80-fpm:
+    image: php:8.0.30-fpm
+    container_name: php2shell-fpm-80
+    volumes:
+      - ./webroot:/var/www/html
+      - ./php.ini:/usr/local/etc/php/php.ini
+      - ./www.conf:/usr/local/etc/php-fpm.d/www.conf
+    security_opt: [seccomp:unconfined]
+    privileged: true
+    command: >
+      bash -c "mkdir -p /tmp/sessions && chmod 1777 /tmp/sessions && php-fpm"
+
+  # ── PHP 8.1.31 (EOL, last 8.1) ── FPM
+  php81-fpm:
+    image: php:8.1.31-fpm
+    container_name: php2shell-fpm-81
+    volumes:
+      - ./webroot:/var/www/html
+      - ./php.ini:/usr/local/etc/php/php.ini
+      - ./www.conf:/usr/local/etc/php-fpm.d/www.conf
+    security_opt: [seccomp:unconfined]
+    privileged: true
+    command: >
+      bash -c "mkdir -p /tmp/sessions && chmod 1777 /tmp/sessions && php-fpm"
+
+  # ════════════════════════════════════════════════════════
+  # Supported versions (last vulnerable before patch)
+  # ════════════════════════════════════════════════════════
+
   # ── PHP 8.2.34 (vulnerable) ── FPM — Chains A, B, C, E
   php82-fpm:
     image: php:8.2.34-fpm
@@ -38,7 +98,11 @@ services:
     command: >
       bash -c "mkdir -p /tmp/sessions && chmod 1777 /tmp/sessions && php-fpm"
 
-  # ── PHP 8.2.35 (PATCHED) ── FPM — for differential testing
+  # ════════════════════════════════════════════════════════
+  # Patched (differential testing)
+  # ════════════════════════════════════════════════════════
+
+  # ── PHP 8.2.35 (PATCHED) ── FPM
   php82p-fpm:
     image: php:8.2.35-fpm
     container_name: php2shell-fpm-82p
@@ -51,25 +115,63 @@ services:
     command: >
       bash -c "mkdir -p /tmp/sessions && chmod 1777 /tmp/sessions && php-fpm"
 
+  # ════════════════════════════════════════════════════════
+  # Frontend / SAPI
+  # ════════════════════════════════════════════════════════
+
   # ── Nginx — routes to all FPM backends by port
   nginx:
     image: nginx:alpine
     container_name: php2shell-nginx
     ports:
-      - "18080:80"    # → PHP 8.2.34 (vulnerable)
-      - "18082:82"    # → PHP 8.3.35 (vulnerable)
-      - "18083:83"    # → PHP 8.4.26 (vulnerable)
-      - "18084:84"    # → PHP 8.2.35 (patched)
+      - "18056:56"    # → PHP 5.6.40 (EOL)
+      - "18074:74"    # → PHP 7.4.33 (EOL)
+      - "18080:80"    # → PHP 8.0.30 (EOL)
+      - "18081:81"    # → PHP 8.1.31 (EOL)
+      - "18082:82"    # → PHP 8.2.34 (vulnerable)
+      - "18083:83"    # → PHP 8.3.35 (vulnerable)
+      - "18084:84"    # → PHP 8.4.26 (vulnerable)
+      - "18085:85"    # → PHP 8.2.35 (patched)
     volumes:
       - ./webroot:/var/www/html
       - ./nginx.conf:/etc/nginx/conf.d/default.conf
-    depends_on: [php82-fpm, php83-fpm, php84-fpm, php82p-fpm]
+    depends_on:
+      - php56-fpm
+      - php74-fpm
+      - php80-fpm
+      - php81-fpm
+      - php82-fpm
+      - php83-fpm
+      - php84-fpm
+      - php82p-fpm
 
   # ── Apache mod_php 8.2.34 (vulnerable) ── Chain D (OOM)
   apache:
     image: php:8.2.34-apache
     container_name: php2shell-apache
-    ports: ["18081:80"]
+    ports: ["18091:80"]
+    volumes:
+      - ./webroot:/var/www/html
+      - ./php-apache.ini:/usr/local/etc/php/php.ini
+    command: >
+      bash -c "mkdir -p /tmp/sessions && chmod 1777 /tmp/sessions && apache2-foreground"
+
+  # ── Apache mod_php 5.6.40 (EOL) ── Chain D on legacy stack
+  apache56:
+    image: php:5.6.40-apache
+    container_name: php2shell-apache-56
+    ports: ["18092:80"]
+    volumes:
+      - ./webroot:/var/www/html
+      - ./php-apache.ini:/usr/local/etc/php/php.ini
+    command: >
+      bash -c "mkdir -p /tmp/sessions && chmod 1777 /tmp/sessions && apache2-foreground"
+
+  # ── Apache mod_php 7.4.33 (EOL) ── Chain D on legacy stack
+  apache74:
+    image: php:7.4.33-apache
+    container_name: php2shell-apache-74
+    ports: ["18093:80"]
     volumes:
       - ./webroot:/var/www/html
       - ./php-apache.ini:/usr/local/etc/php/php.ini
