@@ -1,23 +1,28 @@
 # php2shell Lab Environment
 
-Docker-based lab for reproducing CVE-2026-109618 / CVE-2026-109619.
+Docker-based multi-version lab for reproducing CVE-2026-109618 / CVE-2026-109619.
 
 ## Setup
 
 ```bash
-# Option 1: One-click (generates all configs + starts containers)
+# One-click (generates all configs + starts containers)
 chmod +x setup.sh && ./setup.sh
 
-# Option 2: Manual (if you already have the configs)
+# Or manual (if you already have the configs)
 docker compose up -d
 ```
 
 ## Services
 
-| Service | URL | PHP SAPI | Chains |
-|---------|-----|----------|--------|
-| nginx + PHP-FPM | http://127.0.0.1:18080 | fpm-fcgi | A, B, C, E |
-| Apache mod_php | http://127.0.0.1:18081 | apache2handler | A, D |
+| Port | PHP Version | SAPI | Status | Chains |
+|------|-------------|------|--------|--------|
+| 18080 | 8.2.34 | FPM + nginx | **Vulnerable** | A, B, C, E |
+| 18081 | 8.2.34 | Apache mod_php | **Vulnerable** | A, D |
+| 18082 | 8.3.35 | FPM + nginx | **Vulnerable** | A, B, C, E |
+| 18083 | 8.4.26 | FPM + nginx | **Vulnerable** | A, B, C, E |
+| 18084 | 8.2.35 | FPM + nginx | **Patched** | Differential testing |
+
+Patched versions: 8.2.35, 8.3.36, 8.4.27 (commit 3584a98bda).
 
 ## Endpoints
 
@@ -33,15 +38,46 @@ docker compose up -d
 | `/app/upload.php` | Under `.user.ini` with `php_serialize` handler |
 | `/api/endpoint.php` | Under `.user.ini` with `php` handler + `Evil` class |
 
+## Running Exploits
+
+```bash
+cd ../exploit
+
+# Chain A — session injection + LFI (works on ALL versions including patched)
+python3 chain_a_session_lfi.py --target http://127.0.0.1:18080   # 8.2.34
+python3 chain_a_session_lfi.py --target http://127.0.0.1:18082   # 8.3.35
+python3 chain_a_session_lfi.py --target http://127.0.0.1:18084   # 8.2.35 patched — still works!
+
+# Chain C — handler mismatch → __destruct RCE
+python3 chain_c_mismatch_rce.py --target http://127.0.0.1:18080  # 8.2.34
+
+# Chain D — OOM on Apache mod_php
+# (send oversized multipart POST to port 18081)
+```
+
 ## Chain-specific Notes
 
-**Chain A (Session injection + LFI):** Session files are in `/tmp/sessions/` (FPM) or `/tmp/` (Apache). The LFI sink at `/vuln.php?page=/tmp/sessions/sess_YOURSID` includes the poisoned session file.
+**Chain A (Session injection + LFI):** Session files are in `/tmp/sessions/` (FPM) or `/tmp/` (Apache). The LFI sink at `/vuln.php?page=/tmp/sessions/sess_YOURSID` includes the poisoned session file. **Works even on patched PHP** — the patch does not sanitize filenames.
 
 **Chain C (Handler mismatch):** The lab has two directories with different `session.serialize_handler` settings (`/app/` = `php_serialize`, `/api/` = `php`). FPM is configured with `pm=static, max_children=1` so worker pollution is deterministic.
 
-**Chain D (OOM):** Apache mod_php has `memory_limit=32M` and `post_max_size=256M`. Send a multipart POST with ~400 fields × 100KB to trigger OOM. The `max_input_vars=100000` is intentionally high to allow the field flooding.
+**Chain D (OOM):** Apache mod_php has `memory_limit=32M` and `post_max_size=256M`. Send a multipart POST with ~400 fields x 100KB to trigger OOM. The `max_input_vars=100000` is intentionally high to allow the field flooding.
 
 **Chain E (FPM stale BG):** FPM has a single worker (`max_children=1`) so producer and consumer always hit the same process. Build a ~30MB session file first (via repeated upload_progress with large filenames), then trigger OOM via `session_oom.php`.
+
+## Differential Testing
+
+Port 18084 runs the patched PHP 8.2.35. Compare exploit behavior:
+
+```bash
+# Should succeed (Chain A is app-level, not fixed by patch)
+python3 chain_a_session_lfi.py --target http://127.0.0.1:18080  # vuln
+python3 chain_a_session_lfi.py --target http://127.0.0.1:18084  # patched — same result
+
+# Should fail on patched (Chain C's rfc1867 path is hardened)
+python3 chain_c_mismatch_rce.py --target http://127.0.0.1:18080  # vuln — RCE
+python3 chain_c_mismatch_rce.py --target http://127.0.0.1:18084  # patched — blocked
+```
 
 ## Cleanup
 
