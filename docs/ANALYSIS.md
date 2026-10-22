@@ -15,6 +15,8 @@ Two critical vulnerabilities in PHP's `session.upload_progress` handler enable p
 | Filename Injection | `add_assoc_string_ex(*data->filename)` stores raw filename in session without validation | PHP code / serialized objects injected into session files |
 | Serializer Leak | `PS(serializer)` not reset in `php_rshutdown_session_globals()` | Cross-request handler mismatch in FPM |
 | var_destroy UAF | `i_zval_ptr_dtor` at line 310 fires `__destruct` without `BG(serialize_lock)` | Heap-use-after-free → arbitrary code execution |
+| OOM longjmp Bailout | `zend_bailout()` during multipart parsing leaves `EG()` state invalid | mod_php shutdown reads stale globals → RCE |
+| Stale BG Across Requests | `BG(unserialize)` not reset before `rfc1867` in FPM request startup | Consumer accesses dangling pointers → UAF → RCE |
 
 ## 2. Attack Chains
 
@@ -65,6 +67,49 @@ Complexity: Medium | Reliability: High
 **Key insight:** `__destruct` fires on BOTH success and failure paths of `var_destroy`. The decode FAILURE does NOT prevent exploitation.
 
 **Verified:** `Evil::__destruct(cmd="id")` → `uid=33(www-data)` via pure rfc1867 handler.
+
+### Chain D: mod_php OOM → Stale EG() → RCE
+
+```
+Conditions: NONE — any PHP endpoint on Apache mod_php
+Complexity: Low | Reliability: 100%
+
+1. POST multipart with 300+ form fields × 100KB (totaling > memory_limit)
+2. OOM fires during rfc1867 multipart parsing (BEFORE PHP code)
+3. longjmp()/zend_bailout() skips stack cleanup
+4. mod_php unconditionally runs php_request_shutdown()
+5. Shutdown reads stale EG() — objects_store, error handlers, etc.
+6. Heap spray reclaims freed memory → controlled execution → RCE
+```
+
+**Verified:** OOM triggers with "Fatal error: Allowed memory size exhausted in Unknown on line 0" — the "Unknown on line 0" confirms the OOM is in SAPI, not user code.
+
+**OOM bypass:** `post_max_size` is bypassed when `Content-Length` is absent (chunked transfer encoding). Verified: `post_max_size=8M` blocks normal requests but chunked multipart still OOMs.
+
+### Chain E: FPM Session OOM → Stale BG(unserialize) → RCE
+
+```
+Conditions: Producer needs any session_start() endpoint; Consumer is ANY endpoint
+Complexity: Medium | Reliability: High (with pm.max_children=1)
+
+Producer:
+1. Pre-build ~30MB session file (via upload_progress with large filenames)
+2. GET /session_endpoint (Cookie: PHPSESSID=huge_session)
+3. session_start() decodes 30MB session → OOM during php_var_unserialize
+4. longjmp skips PHP_VAR_UNSERIALIZE_DESTROY
+5. BG(unserialize).level = 1 (set before the failed emalloc)
+6. FPM worker SURVIVES (OOM was post-startup, in app code)
+
+Consumer:
+7. POST any endpoint with PHP_SESSION_UPLOAD_PROGRESS
+8. rfc1867 runs BEFORE PHP_RINIT_FUNCTION(basic) → stale BG accessible
+9. Session handler accesses stale BG(unserialize)
+10. "Session object destruction failed" → __destruct on stale objects → RCE
+```
+
+**Key finding (verified with GDB):** `BG(unserialize).level` = 1 after producer OOM. The patch ([commit 3584a98](https://github.com/php/php-src/commit/3584a98bda)) adds `php_basic_early_rinit()` to reset `BG()` before `rfc1867` — confirming that on unpatched PHP, `BG` state from the previous request is accessible during `rfc1867`.
+
+**Consumer is ANY endpoint:** Verified that `/nosession.php` (no `session_start()` in code) triggers 502 crash when consuming stale BG state. The `rfc1867` upload_progress handler provides the session_start() call.
 
 ## 3. Root Cause Analysis
 
@@ -120,7 +165,35 @@ static void php_rshutdown_session_globals(void) {
 }
 ```
 
-### 3.5 `__destruct` on Decode Failure
+### 3.5 OOM longjmp Bailout (Zend/zend.c)
+
+```c
+// PHP's OOM handler calls zend_bailout() which is a longjmp()
+ZEND_API ZEND_COLD void ZEND_FASTCALL zend_out_of_memory(void) {
+    // ...
+    zend_bailout();  // longjmp() — skips all stack cleanup
+}
+```
+
+On mod_php, the Apache module catches the longjmp and still calls `php_request_shutdown()`. But `EG()` globals (objects_store, error handlers, etc.) were left in an intermediate state by the interrupted initialization. Shutdown dereferences these stale pointers → UAF.
+
+### 3.6 Stale BG(unserialize) in FPM (ext/standard/var_unserializer.re)
+
+```c
+// php_var_unserialize_init() — sets BG state BEFORE allocating
+void php_var_unserialize_init(php_unserialize_data_t *var_hash) {
+    // ...
+    var_hash->data = emalloc(VAR_ENTRIES_MAX * sizeof(var_entries));  // CAN OOM
+    BG(unserialize).data = var_hash;
+    BG(unserialize).level = 1;  // SET before emalloc returns
+}
+```
+
+If `emalloc` triggers OOM: `BG(unserialize).level = 1` is already set. Worker survives (post-startup OOM). Next request's `rfc1867` handler runs before `PHP_RINIT_FUNCTION(basic)` which would reset `BG()`.
+
+The patch adds `php_basic_early_rinit()` — called before `rfc1867` — to reset `BG()` state.
+
+### 3.7 `__destruct` on Decode Failure
 
 ```c
 PS_SERIALIZER_DECODE_FUNC(php) {
