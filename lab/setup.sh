@@ -148,8 +148,9 @@ INI
 # ── Nginx config (multi-backend) ───────────────────────
 
 cat > nginx.conf << 'NGINX'
-# Shared fastcgi block
-# Each server{} routes to a different PHP-FPM version by port
+# Use Docker embedded DNS so upstream names resolve at runtime, not at startup.
+# Without this, nginx exits fatally if any FPM container isn't ready yet.
+resolver 127.0.0.11 valid=5s;
 
 # PHP 5.6.40 (EOL)
 server {
@@ -157,7 +158,8 @@ server {
     root /var/www/html; index index.php; client_max_body_size 128m;
     location / { try_files $uri $uri/ /index.php?$query_string; }
     location ~ \.php$ {
-        fastcgi_pass php56-fpm:9000;
+        set $backend php56-fpm:9000;
+        fastcgi_pass $backend;
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
@@ -171,7 +173,8 @@ server {
     root /var/www/html; index index.php; client_max_body_size 128m;
     location / { try_files $uri $uri/ /index.php?$query_string; }
     location ~ \.php$ {
-        fastcgi_pass php74-fpm:9000;
+        set $backend php74-fpm:9000;
+        fastcgi_pass $backend;
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
@@ -185,7 +188,8 @@ server {
     root /var/www/html; index index.php; client_max_body_size 128m;
     location / { try_files $uri $uri/ /index.php?$query_string; }
     location ~ \.php$ {
-        fastcgi_pass php80-fpm:9000;
+        set $backend php80-fpm:9000;
+        fastcgi_pass $backend;
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
@@ -199,7 +203,8 @@ server {
     root /var/www/html; index index.php; client_max_body_size 128m;
     location / { try_files $uri $uri/ /index.php?$query_string; }
     location ~ \.php$ {
-        fastcgi_pass php81-fpm:9000;
+        set $backend php81-fpm:9000;
+        fastcgi_pass $backend;
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
@@ -213,7 +218,8 @@ server {
     root /var/www/html; index index.php; client_max_body_size 128m;
     location / { try_files $uri $uri/ /index.php?$query_string; }
     location ~ \.php$ {
-        fastcgi_pass php82-fpm:9000;
+        set $backend php82-fpm:9000;
+        fastcgi_pass $backend;
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
@@ -227,7 +233,8 @@ server {
     root /var/www/html; index index.php; client_max_body_size 128m;
     location / { try_files $uri $uri/ /index.php?$query_string; }
     location ~ \.php$ {
-        fastcgi_pass php83-fpm:9000;
+        set $backend php83-fpm:9000;
+        fastcgi_pass $backend;
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
@@ -241,7 +248,8 @@ server {
     root /var/www/html; index index.php; client_max_body_size 128m;
     location / { try_files $uri $uri/ /index.php?$query_string; }
     location ~ \.php$ {
-        fastcgi_pass php84-fpm:9000;
+        set $backend php84-fpm:9000;
+        fastcgi_pass $backend;
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
@@ -255,7 +263,8 @@ server {
     root /var/www/html; index index.php; client_max_body_size 128m;
     location / { try_files $uri $uri/ /index.php?$query_string; }
     location ~ \.php$ {
-        fastcgi_pass php82p-fpm:9000;
+        set $backend php82p-fpm:9000;
+        fastcgi_pass $backend;
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
