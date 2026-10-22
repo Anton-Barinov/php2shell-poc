@@ -43,9 +43,11 @@ Impacts **78% of all websites** — including WordPress (43%), Joomla, Drupal, L
 | **B** | var_destroy UAF → handler overwrite | No | App calls `unserialize()` | All |
 | **C** | Handler mismatch → `__destruct` | Yes | Two dirs with different serialize_handler | FPM |
 | **D** | OOM corruption → stale `EG()` | Yes | **None** — any endpoint | mod_php |
-| **E** | FPM session OOM → stale `BG()` | Yes | Any `session_start()` endpoint | FPM |
+| **E** | FPM session OOM → stale `BG()` | Yes | Producer: any `session_start()` endpoint; Consumer: **any** endpoint | FPM |
 
-Chain D is the most critical: **zero-dependency pre-auth RCE** against any Apache mod_php installation. No LFI, no app vulnerability, no authentication — just a single multipart POST.
+Chain D is the most critical: **zero-dependency pre-auth RCE** against any Apache mod_php installation.
+
+Chain E is nearly as broad on FPM: the producer needs any endpoint that calls `session_start()` (near-universal — WordPress, Laravel, Joomla, Drupal all do), and the **consumer can be any PHP endpoint** — the `rfc1867` upload_progress handler runs during SAPI startup before application code. Verified: `nosession.php` (no `session_start()` in code) triggers 502 crash when consuming stale `BG(unserialize)` state.
 
 ## Exploits
 
